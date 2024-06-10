@@ -195,7 +195,7 @@ do
 
     make_dir $EVADMX_OUT
 
-    "$EVADMX_PATH/evalAdmix" -plink $OUT/plink_bin/$FNAME -fname $OUT/cv/$FNAME.$K.P -qname $OUT/cv/$FNAME.$K.Q -P 10 -o $EVADMX_OUT/k${K}_output.corres.txt # Runs the evalAdmix script
+    "$EVADMX_PATH/evalAdmix" -plink $OUT/plink_bin/$FNAME -fname $OUT/cv/$FNAME.$K.P -qname $OUT/cv/$FNAME.$K.Q -P 6 -o $EVADMX_OUT/k${K}_output.corres.txt # Runs the evalAdmix script
 
     echo "Running rscripts..."
 
