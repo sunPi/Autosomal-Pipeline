@@ -9,6 +9,7 @@ touch $merge_list_file
 
 # Find all PLINK BED files in the directory
 find "$FILES_DIR" -type f -name "*.bed" | while read -r bed_file; do
+  echo $bed_file
     # Remove the .bed extension to get the base filename
     base_name="${bed_file%.bed}"
     # Check if the corresponding .bim and .fam files exist
