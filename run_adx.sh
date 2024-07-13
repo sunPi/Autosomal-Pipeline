@@ -5,58 +5,12 @@
 # sudo apt install zlib1g-dev
 # sudo apt install r-base-core
 
-# Functions
-make_dir(){ # This function creates directories recursively based on the name/path provided as the positional argument
-    DIR=$1
-    if [ ! -d "$DIR" ]; then
-        # If the directory does not exist, create it
-        mkdir -p $DIR
-    fi
-}
-prepare_binaries(){ # This function creates PLINK binary files using 4 positional arguments
-    FILE=$1
-    OUT=$2
-    FNAME=$3
-    SNV_FIL=$4
+# Get the directory of the script
+SCRIPT_DIR=$(dirname "$(readlink -f "$0")")
 
-    make_dir "$OUT/plink_bin"
-
-    run_plink() {
-
-        FILE=$1
-        OUT=$2
-        FNAME=$3
-
-        echo "Creating raw binaries using PLINK..."
-        $TOOLSDIR/plink/plink --vcf $FILE --make-bed --out $OUT/plink_bin/$FNAME --allow-extra-chr
-    }
-    filter_snp() {
-
-        FNAME=$1
-        SNV_FIL=$2
-
-        echo "Filtering out rows with $SNV_FIL non-missing SNV mutations..."
-        $TOOLSDIR/plink/plink --bfile $FNAME --geno $SNV_FIL --make-bed --out $FNAME --allow-extra-chr # Filter out SNPS with missingness > 99.9% 0.999
-    }
-
-    rename_chr () {
-
-        FNAME=$1
-        echo "Renaming chromosomes to ADMIXTURE acceptable format and removing non-human chromosome names..."
-        # ADMIXTURE does not accept chromosome names that are not human chromosomes. We will thus just exchange the first column by 0
-        awk '{$1="0";print $0}' $FNAME.bim > $FNAME.bim.tmp
-        mv $FNAME.bim.tmp $FNAME.bim
-
-    }
-
-    run_plink $FILE $OUT $FNAME
-
-    cd "$OUT/plink_bin/"
-
-    filter_snp $FNAME $SNV_FIL
-
-    rename_chr $FNAME
-}
+# Source necessary files
+. $SCRIPT_DIR/functions.sh
+. $SCRIPT_DIR/config.sh
 
 # --- Help Function
 usage() # This is the help function
@@ -65,16 +19,19 @@ usage() # This is the help function
    echo "========================================= Run ADMIXTURE Pipeline =============================================="
    echo "                usage: run_adx.sh [-h] [ARGS]                                                             "
    echo "                example: run_adx.sh -f ./data/ -x 2 -s 0.999                                              "
-   echo "                                  -f       Path to the folder with the .vcf files.                        "
+   echo "                                  -f       Path to the folder with the input files                        "
+   echo "                                  -e       Specify the file extension of your input files.                "
    echo "                                  -k       Number of guessed populations K (min is 2)                     "
    echo "                                  -s       Number by which to filter the SNVs between 0 and 1.            "
+   echo "                                  -o       Set the name of the results folder.                            "
+   echo "                                  -m       Merges the vcf files before running analysis.                  "
    echo "                                  -V       Prints out the tool version.                                   "
    echo "                                  -h       Print this Help.                                               "
    echo "                                                                                                          "
    echo "==============================================================================================================="
 }
 
-while getopts ":hf:k:s:V" flag;
+while getopts ":hf:e:k:s:o:mV" flag;
 do
     case "${flag}" in
         h) # Display Help Function
@@ -83,11 +40,20 @@ do
         f)
               FOLDER=${OPTARG}
         ;;
+        e)
+              EXTENSION=${OPTARG}
+        ;;
         k)
               X=${OPTARG}
         ;;
         s)
               SNV_FIL=${OPTARG}
+        ;;
+        o)
+              OUTFOLDER=${OPTARG}
+        ;;
+        m)
+              MERGE="TRUE"
         ;;
         V)
               VERSION="version"
@@ -108,7 +74,7 @@ if [ "$X" -lt 2 ]; then
     exit 1
 fi
 
-num=$(echo "$SNV_FIL")
+# num=$(echo "$SNV_FIL")
 
 # Check if less than 0 or greater than 1 using OR (||) in bc
 if [ $(echo "$num < 0 || $num > 1" | bc) -eq 1 ]; then
@@ -116,79 +82,104 @@ if [ $(echo "$num < 0 || $num > 1" | bc) -eq 1 ]; then
   exit 1
 fi
 
-# Get the directory of the script
-SCRIPT_DIR=$(dirname "$(readlink -f "$0")")
-
 # Change directory to the script dir
 cd "$SCRIPT_DIR" || exit
 
-# Initialize the directory with the R scripts
-RSCRIPTS="$SCRIPT_DIR/R"
-BASHSCRIPTS="$SCRIPT_DIR/BASH"
-TOOLSDIR="$SCRIPT_DIR/tools"
-EVADMX_PATH="$TOOLSDIR/evalAdmix"
-
 # Generate the input file in plink format
-OUT="$SCRIPT_DIR/results/ADMIXTURE"
+if [[ -z $OUTFOLDER ]]
+  then
+    OUT="$SCRIPT_DIR/results/ADMIXTURE"
+  else
+    OUT="$SCRIPT_DIR/results/$OUTFOLDER/ADMIXTURE"
+fi
 
+##### RUN PLINK #####
 # Create folder to hold the PLINK binaries
 make_dir "$OUT/plink_bin"
 
-# Chhange to that directory
+# Change to that directory
 cd $SCRIPT_DIR/$FOLDER
 
 # Loop over the files in $1 and extract file name and prepare PLINK binaries
-for vcf_file in *.vcf; do
-      echo $vcf_file
-      FNAME=${vcf_file%.*}
-
-      prepare_binaries $SCRIPT_DIR/$FOLDER/$vcf_file $OUT $FNAME $SNV_FIL
-
+for file in *."$EXTENSION"; do
+      cd $SCRIPT_DIR/$FOLDER
+      FNAME=${file%.*}
+      prepare_binaries $SCRIPT_DIR/$FOLDER/$file $OUT $FNAME $SNV_FIL $EXTENSION
 done
 
-# Creates a list of plink binary files to be used for de-duplicating
-bash $BASHSCRIPTS/create_plink_bin_list.sh "$OUT/plink_bin"
-FNAME=${FNAME%%[0-9]*}"_merged" # Creates a new file name for the merged files
+# # Creates a list of plink binary files to be used for de-duplicating
+# echo "$OUT/plink_bin"
+cd $OUT/plink_bin
 
-# Merges files based on the merge list
-"$TOOLSDIR/plink/plink" --merge-list merge_list.txt --make-bed --out $FNAME
-
-# Looks for a file with duplicated sample id's
-line_file="$OUT/plink_bin/GT_merged-merge.missnp"
-
-# Check if the file with duplicates exists and processe them out, then recreates the PLINK binaries
-if [ -e "$line_file" ]; then
-
-  bash $BASHSCRIPTS/remove_multialleles.sh "$line_file" "$SCRIPT_DIR/$FOLDER"
-
-  rm -r "$SCRIPT_DIR/results"
-  make_dir "$OUT/plink_bin"
-
-  cd $SCRIPT_DIR/$FOLDER
-
-  for vcf_file in *.vcf; do
-        echo $vcf_file
-        FNAME=${vcf_file%.*}
-
-        prepare_binaries $SCRIPT_DIR/$FOLDER/$vcf_file $OUT $FNAME $SNV_FIL
-  done
+##### MERGE FILES #####
+if [ "$MERGE" = "TRUE" ]; then
+  echo "Merging files..."
 
   bash $BASHSCRIPTS/create_plink_bin_list.sh "$OUT/plink_bin"
-  FNAME=${FNAME%%[0-9]*}"_merged"
+  FNAME=${FNAME%%[0-9]*}"_merged" # Creates a new file name for the merged files
 
+  # Merges files based on the merge list
   "$TOOLSDIR/plink/plink" --merge-list merge_list.txt --make-bed --out $FNAME
 
+  # Looks for a file with duplicated sample id's
+  line_file="$OUT/plink_bin/$FNAME-merge.missnp"
+
+  ##### REMOVE DUPLICATES #####
+  # Check if the file with duplicates exists and processe them out, then recreates the PLINK binaries
+  if [ -e "$line_file" ]; then
+
+    bash $BASHSCRIPTS/remove_multialleles.sh "$line_file" "$SCRIPT_DIR/$FOLDER"
+
+    rm -r "$SCRIPT_DIR/results"
+    make_dir "$OUT/plink_bin"
+
+    cd $SCRIPT_DIR/$FOLDER
+
+    # Loop over the files in $1 and extract file name and prepare PLINK binaries
+    for file in *."$EXTENSION"; do
+          FNAME=${file%.*}
+          prepare_binaries $SCRIPT_DIR/$FOLDER/$file $OUT $FNAME $SNV_FIL $EXTENSION
+          cd $SCRIPT_DIR/$FOLDER
+    done
+
+    # for vcf_file in *.vcf; do
+    #       echo $vcf_file
+    #       FNAME=${vcf_file%.*}
+    #
+    #       prepare_binaries $SCRIPT_DIR/$FOLDER/$vcf_file $OUT $FNAME $SNV_FIL
+    # done
+
+    bash $BASHSCRIPTS/create_plink_bin_list.sh "$OUT/plink_bin"
+    FNAME=${FNAME%%[0-9]*}"_merged"
+
+    "$TOOLSDIR/plink/plink" --merge-list merge_list.txt --make-bed --out $OUT/plink_bin/$FNAME
+
+  else
+    echo "Warning: File line_file does not exist. Skipping merging process..."
+  fi
+
 else
-  echo "Warning: File $line_file does not exist. Skipping merging process..."
+  echo "Skipping merging..."
+
 fi
 
 mkdir $OUT/cv
 cd $OUT/cv
 
+# Checks the maximum available threads based on users processor and sets the
+# the variable to that integer
+nthrds=$(nproc)
+j="-j$nthrds"
+
+# FNAME=${FNAME%%[0-9]*}"_merged" # Creates a new file name for the merged files
+# FNAME=${FNAME%%[0-9]*}
 # Starts a loop for each 1 to K, so it caulculates and cross-validates ADMIXTURE proportions for all values of K
+# echo $FNAME
+
+##### RUN ADMIXTURE and evalAdmix #####
 for K in $(seq 2 $X)
 do
-    "$TOOLSDIR/admixture/admixture32" --cv $OUT/plink_bin/$FNAME.bed $K | tee log${K}.out
+    "$TOOLSDIR/admixture/admixture32" --cv $OUT/plink_bin/$FNAME.bed $K $j | tee log${K}.out
 
     # Run evalAdmix on each K selected
     EVADMX_OUT=$OUT/cv/eval_admix_results/"k$K"
@@ -199,8 +190,11 @@ do
 
     echo "Running rscripts..."
 
-    Rscript $RSCRIPTS/visualise.R $OUT/plink_bin/$FNAME.fam $OUT/cv/$FNAME.$K.Q $EVADMX_OUT/k${K}_output.corres.txt # Visualise the results
+    Rscript $RSCRIPTS/visualise.R $OUT/plink_bin/$FNAME.fam $OUT/cv/$FNAME.$K.Q $EVADMX_OUT/k${K}_output.corres.txt $OUT/cv/eval_admix_results/ # Visualise the results
 
 done
 
-grep -h CV log*.out > final_cv_log.out # Aggregates the results into one file
+grep -h CV $OUT/cv/log*.out > $OUT/cv/final_cv_log.out # Aggregates the results into one file
+
+# Redirects output to out.log and errors to error.log
+# command > out.log 2> error.log
