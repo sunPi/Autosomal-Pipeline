@@ -1,13 +1,19 @@
-source("/home/jr453/bioinf-tools/workshop/evalAdmix/visFuns.R")
+source("~/bioinf-tools/workshop/evalAdmix/visFuns.R")
 library(here)
 
 # Retrieve command-line arguments
 args <- commandArgs(trailingOnly = TRUE)
 
 # Extract arguments
+# print(args[1])
+# print(args[2])
+# print(args[3])
+# print(args[4])
+
 pop.p <- normalizePath(args[1]) # GT13_Data.vcf.fam
 q.p   <- normalizePath(args[2]) # GT13_Data.vcf.1.Q
 r.p   <- normalizePath(args[3]) # output.corres.txt
+out.p <- normalizePath(args[4]) # Path to save the graphs
 
 # pop.p <- "/home/jr453/bioinf-tools/pipelines/Autosomal-Pipeline/results/ADMIXTURE/plink_bin/GT_merged.fam"
 # q.p   <- "/home/jr453/bioinf-tools/pipelines/Autosomal-Pipeline/results/ADMIXTURE/cv/GT_merged.2.Q"
@@ -24,11 +30,11 @@ r <- as.matrix(read.table(r.p))
 
 ord <- orderInds(pop=pop, q=q) # ord is optional but this make it easy that admixture and correlation of residuals plots will have individuals in same order
 
-png(here('ADMIXTURE', 'cv', 'eval_admix_results', 'admix_plot.png'))
+png(here(out.p, 'admix_plot.png'))
 plotAdmix(q=q, pop=pop, ord=ord)
 dev.off()
 
-png(here('ADMIXTURE', 'cv', 'eval_admix_results', 'corr_plot.png'))
+png(here(out.p, 'corr_plot.png'))
 plotCorRes(cor_mat = r, pop = pop, ord=ord, title = "Admixture evaluation as correlation of residuals", max_z=0.25, min_z=-0.25)
 dev.off()
 
