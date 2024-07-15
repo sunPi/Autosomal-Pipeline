@@ -31,10 +31,11 @@ prepare_binaries(){ # This function creates PLINK binary files using 4 positiona
         if [ "$EXTENSION" = "bed" ]
           then
            echo "The file is .bed... not implemented yet."
-           echo $FNAME
+           # echo $FOLDER$FNAME
            # $TOOLSDIR/plink/plink --vcf $FILE --make-bed --out $OUT/plink_bin/$FNAME --allow-extra-chr
 
-           files=$(dirname "/home/jr453-omen/bioinf-tools/pipelines/Autosomal-Pipeline/reference_admixture/data/HapMap3/hapmap3.bed")
+           files=$(dirname $SCRIPT_DIR/$FOLDER$FNAME)
+           # echo $files/$FNAME.*
            cp $files/$FNAME.* $OUT/plink_bin
 
          elif [ "$EXTENSION" = "vcf" ]

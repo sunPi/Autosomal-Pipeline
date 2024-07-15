@@ -25,13 +25,14 @@ usage() # This is the help function
    echo "                                  -s       Number by which to filter the SNVs between 0 and 1.            "
    echo "                                  -o       Set the name of the results folder.                            "
    echo "                                  -m       Merges the vcf files before running analysis.                  "
+   echo "                                  -c       Computes and evaluates admixtures for only the specified integer.                  "
    echo "                                  -V       Prints out the tool version.                                   "
    echo "                                  -h       Print this Help.                                               "
    echo "                                                                                                          "
    echo "==============================================================================================================="
 }
 
-while getopts ":hf:e:k:s:o:mV" flag;
+while getopts ":hf:e:k:s:o:mcV" flag;
 do
     case "${flag}" in
         h) # Display Help Function
@@ -55,6 +56,9 @@ do
         m)
               MERGE="TRUE"
         ;;
+        c)
+              COMPUTE="TRUE"
+        ;;
         V)
               VERSION="version"
               echo $VERSION
@@ -74,7 +78,8 @@ if [ "$X" -lt 2 ]; then
     exit 1
 fi
 
-# num=$(echo "$SNV_FIL")
+# Constants
+num=$(echo "$SNV_FIL")
 
 # Check if less than 0 or greater than 1 using OR (||) in bc
 if [ $(echo "$num < 0 || $num > 1" | bc) -eq 1 ]; then
@@ -102,9 +107,9 @@ cd $SCRIPT_DIR/$FOLDER
 
 # Loop over the files in $1 and extract file name and prepare PLINK binaries
 for file in *."$EXTENSION"; do
-      cd $SCRIPT_DIR/$FOLDER
       FNAME=${file%.*}
       prepare_binaries $SCRIPT_DIR/$FOLDER/$file $OUT $FNAME $SNV_FIL $EXTENSION
+      cd $SCRIPT_DIR/$FOLDER
 done
 
 # # Creates a list of plink binary files to be used for de-duplicating
@@ -177,24 +182,42 @@ j="-j$nthrds"
 # echo $FNAME
 
 ##### RUN ADMIXTURE and evalAdmix #####
-for K in $(seq 2 $X)
-do
-    "$TOOLSDIR/admixture/admixture32" --cv $OUT/plink_bin/$FNAME.bed $K $j | tee log${K}.out
+if [ "$COMPUTE" = "TRUE" ]
+  then
+    echo "Computing admixtures for K=$X..."
+    "$TOOLSDIR/admixture/admixture32" --cv $OUT/plink_bin/$FNAME.bed $X $j | tee log${K}.out
 
     # Run evalAdmix on each K selected
-    EVADMX_OUT=$OUT/cv/eval_admix_results/"k$K"
+    EVADMX_OUT=$OUT/cv/eval_admix_results/"k$X"
 
     make_dir $EVADMX_OUT
 
-    "$EVADMX_PATH/evalAdmix" -plink $OUT/plink_bin/$FNAME -fname $OUT/cv/$FNAME.$K.P -qname $OUT/cv/$FNAME.$K.Q -P 6 -o $EVADMX_OUT/k${K}_output.corres.txt # Runs the evalAdmix script
+    "$EVADMX_PATH/evalAdmix" -plink $OUT/plink_bin/$FNAME -fname $OUT/cv/$FNAME.$X.P -qname $OUT/cv/$FNAME.$X.Q -P $nthrds -o $EVADMX_OUT/k${X}_output.corres.txt # Runs the evalAdmix script
 
     echo "Running rscripts..."
 
-    Rscript $RSCRIPTS/visualise.R $OUT/plink_bin/$FNAME.fam $OUT/cv/$FNAME.$K.Q $EVADMX_OUT/k${K}_output.corres.txt $OUT/cv/eval_admix_results/ # Visualise the results
+    Rscript $RSCRIPTS/visualise.R $OUT/plink_bin/$FNAME.fam $OUT/cv/$FNAME.$X.Q $EVADMX_OUT/k${X}_output.corres.txt $OUT/cv/eval_admix_results/ # Visualise the results
 
-done
+  else
+    for K in $(seq 2 $X)
+      do
+        "$TOOLSDIR/admixture/admixture32" --cv $OUT/plink_bin/$FNAME.bed $K $j | tee log${K}.out
 
-grep -h CV $OUT/cv/log*.out > $OUT/cv/final_cv_log.out # Aggregates the results into one file
+        # Run evalAdmix on each K selected
+        EVADMX_OUT=$OUT/cv/eval_admix_results/"k$K"
+
+        make_dir $EVADMX_OUT
+
+        "$EVADMX_PATH/evalAdmix" -plink $OUT/plink_bin/$FNAME -fname $OUT/cv/$FNAME.$K.P -qname $OUT/cv/$FNAME.$K.Q -P $nthrds -o $EVADMX_OUT/k${K}_output.corres.txt # Runs the evalAdmix script
+
+        echo "Running rscripts..."
+
+        Rscript $RSCRIPTS/visualise.R $OUT/plink_bin/$FNAME.fam $OUT/cv/$FNAME.$K.Q $EVADMX_OUT/k${K}_output.corres.txt $OUT/cv/eval_admix_results/ # Visualise the results
+  done
+  grep -h CV $OUT/cv/log*.out > $OUT/cv/final_cv_log.out # Aggregates the results into one file
+
+fi
+
 
 # Redirects output to out.log and errors to error.log
 # command > out.log 2> error.log
