@@ -36,4 +36,7 @@ Examples:
   ./run_adx.sh -f ./path/to/vcf -e vcf -k 2 -s 0.999 -o path/to/save/results/in -mc
 ```
 
+## License
+
+This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
 
