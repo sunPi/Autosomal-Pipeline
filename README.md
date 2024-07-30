@@ -18,5 +18,17 @@ Arguments:
 
 Examples:
 <pre>
-sh run_adx.sh -f path/to/vcf -k 5 -s 0.999
+  Basic run using vcf files with 0.001% filtering rate:
+  ./run_adx.sh -f path/to/vcf -e vcf -k 5 -s 0.999 -o path/to/save/results/in 
+
+  Basic run using ped files with 0.001% filtering rate:
+  ./run_adx.sh -f path/to/vcf -e ped -k 5 -s 0.999 -o path/to/save/results/in
+
+  To run the pipeline for multiple vcf files that need to be merge use the "-m" argument:
+  ./run_adx.sh -f path/to/vcf -e ped -k 5 -s 0.999 -o path/to/save/results/in -m
+  
+  Using the "compute" argument to save time by skipping all K values except the selected:
+  ./run_adx.sh -f ./path/to/vcf -e vcf -k 2 -s 0.999 -o path/to/save/results/in -mc
 </pre>
+
+
