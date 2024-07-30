@@ -113,7 +113,6 @@ for file in *."$EXTENSION"; do
 done
 
 # # Creates a list of plink binary files to be used for de-duplicating
-# echo "$OUT/plink_bin"
 cd $OUT/plink_bin
 
 ##### MERGE FILES #####
@@ -147,13 +146,6 @@ if [ "$MERGE" = "TRUE" ]; then
           cd $SCRIPT_DIR/$FOLDER
     done
 
-    # for vcf_file in *.vcf; do
-    #       echo $vcf_file
-    #       FNAME=${vcf_file%.*}
-    #
-    #       prepare_binaries $SCRIPT_DIR/$FOLDER/$vcf_file $OUT $FNAME $SNV_FIL
-    # done
-
     bash $BASHSCRIPTS/create_plink_bin_list.sh "$OUT/plink_bin"
     FNAME=${FNAME%%[0-9]*}"_merged"
 
@@ -176,18 +168,14 @@ cd $OUT/cv
 nthrds=$(nproc)
 j="-j$nthrds"
 
-# FNAME=${FNAME%%[0-9]*}"_merged" # Creates a new file name for the merged files
-# FNAME=${FNAME%%[0-9]*}
-# Starts a loop for each 1 to K, so it caulculates and cross-validates ADMIXTURE proportions for all values of K
-# echo $FNAME
-
 ##### RUN ADMIXTURE and evalAdmix #####
+# Caulculates and cross-validates ADMIXTURE proportions for the specific K value
 if [ "$COMPUTE" = "TRUE" ]
   then
     echo "Computing admixtures for K=$X..."
     "$TOOLSDIR/admixture/admixture32" --cv $OUT/plink_bin/$FNAME.bed $X $j | tee log${K}.out
 
-    # Run evalAdmix on each K selected
+    # Run evalAdmix on the K selected
     EVADMX_OUT=$OUT/cv/eval_admix_results/"k$X"
 
     make_dir $EVADMX_OUT
@@ -199,6 +187,7 @@ if [ "$COMPUTE" = "TRUE" ]
     Rscript $RSCRIPTS/visualise.R $OUT/plink_bin/$FNAME.fam $OUT/cv/$FNAME.$X.Q $EVADMX_OUT/k${X}_output.corres.txt $OUT/cv/eval_admix_results/ # Visualise the results
 
   else
+  # Starts a loop for each 2 to K, so it caulculates and cross-validates ADMIXTURE proportions for all values of K
     for K in $(seq 2 $X)
       do
         "$TOOLSDIR/admixture/admixture32" --cv $OUT/plink_bin/$FNAME.bed $K $j | tee log${K}.out
@@ -208,7 +197,7 @@ if [ "$COMPUTE" = "TRUE" ]
 
         make_dir $EVADMX_OUT
 
-        "$EVADMX_PATH/evalAdmix" -plink $OUT/plink_bin/$FNAME -fname $OUT/cv/$FNAME.$K.P -qname $OUT/cv/$FNAME.$K.Q -P $nthrds -o $EVADMX_OUT/k${K}_output.corres.txt # Runs the evalAdmix script
+        "$EVADMX_PATH/evalAdmix" -plink $OUT/plink_bin/$FNAME -fname $OUT/cv/$FNAME.$K.P -qname $OUT/cv/$FNAME.$K.Q -P 4 -o $EVADMX_OUT/k${K}_output.corres.txt # Runs the evalAdmix script
 
         echo "Running rscripts..."
 
@@ -217,7 +206,6 @@ if [ "$COMPUTE" = "TRUE" ]
   grep -h CV $OUT/cv/log*.out > $OUT/cv/final_cv_log.out # Aggregates the results into one file
 
 fi
-
 
 # Redirects output to out.log and errors to error.log
 # command > out.log 2> error.log
