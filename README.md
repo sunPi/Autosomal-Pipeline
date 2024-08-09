@@ -2,7 +2,7 @@
 
 This is a pipeline of bash and R scripts, that allow the user to analyse a collection of .vcf data for potential ADMIXTURE proportions, determined by the putative K value. In addition, it evaluates the populations by using the [evalAdmix](https://github.com/GenisGE/evalAdmix) tool. 
 
-**Instructions for use:**
+**Instructions for use phase I:**
 
 <pre>
 ./run_adx -h (Displays the available options for running the pipeline) <br>
@@ -35,6 +35,9 @@ Examples:
   Using the "compute" argument to save time by **skipping all K values except the selected**:
   ./run_adx -f ./path/to/vcf -e vcf -k 2 -s 0.999 -o path/to/save/results/in -mc
 ```
+
+**Instructions for use phase II:**
+
 <pre>
 ./run_geomap -h (Displays the available options for running the pipeline) <br>
 </pre>
