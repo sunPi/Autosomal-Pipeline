@@ -34,7 +34,7 @@ Examples:
   
   Using the "compute" argument to save time by **skipping all K values except the selected**:
   ./run_adx -f ./path/to/vcf -e vcf -k 2 -s 0.999 -o path/to/save/results/in -mc
-
+```
 <pre>
 ./run_geomap -h (Displays the available options for running the pipeline) <br>
 </pre>
@@ -56,6 +56,7 @@ Examples:
 ```
   Basic run using example data:
   ./run_geomap.sh -k 5 -f example_data/reference_admixture/K5/ -r example_data/cohort_admixture/DNA35_validation/ -i results/cohort_admixture/DNA35_validation/
+```
 
 ## License
 
