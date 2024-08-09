@@ -1,0 +1,211 @@
+#!/bin/bash
+# sudo apt install bc
+# sudo apt install
+# sudo apt install make
+# sudo apt install zlib1g-dev
+# sudo apt install r-base-core
+
+# Get the directory of the script
+SCRIPT_DIR=$(dirname "$(readlink -f "$0")")
+
+# Source necessary files
+. $SCRIPT_DIR/functions.sh
+. $SCRIPT_DIR/config.sh
+
+# --- Help Function
+usage() # This is the help function
+{
+   # Display Help
+   echo "========================================= Run ADMIXTURE Pipeline =============================================="
+   echo "                usage: run_adx.sh [-h] [ARGS]                                                             "
+   echo "                example: ./run_adx.sh -f path/to/vcf -e vcf -k 5 -s 0.999 -o path/to/save/results/in                                              "
+   echo "                                  -f       Path to the folder with the input files                        "
+   echo "                                  -e       Specify the file extension of your input files.                "
+   echo "                                  -k       Number of guessed populations K (min is 2)                     "
+   echo "                                  -s       Number by which to filter the SNVs between 0 and 1.            "
+   echo "                                  -o       Set the name of the results folder.                            "
+   echo "                                  -m       Merges the vcf files before running analysis.                  "
+   echo "                                  -c       Computes and evaluates admixtures for only the specified integer.                  "
+   echo "                                  -V       Prints out the tool version.                                   "
+   echo "                                  -h       Print this Help.                                               "
+   echo "                                                                                                          "
+   echo "==============================================================================================================="
+}
+
+while getopts ":hf:e:k:s:o:mcV" flag;
+do
+    case "${flag}" in
+        h) # Display Help Function
+              usage
+              exit;;
+        f)
+              FOLDER=${OPTARG}
+        ;;
+        e)
+              EXTENSION=${OPTARG}
+        ;;
+        k)
+              X=${OPTARG}
+        ;;
+        s)
+              SNV_FIL=${OPTARG}
+        ;;
+        o)
+              OUTFOLDER=${OPTARG}
+        ;;
+        m)
+              MERGE="TRUE"
+        ;;
+        c)
+              COMPUTE="TRUE"
+        ;;
+        V)
+              VERSION="version"
+              echo $VERSION
+        ;;
+        ?)
+          echo "Error: Invalid option. Try '-h' to see a list of available options."
+          exit;;
+        *)
+          usage
+          exit;;
+    esac
+done
+
+# Checks if the K value is set to correct number
+if [ "$X" -lt 2 ]; then
+    echo "Error: Value for K must be greater than or equal to 2"
+    exit 1
+fi
+
+# Constants
+num=$(echo "$SNV_FIL")
+
+# Check if less than 0 or greater than 1 using OR (||) in bc
+if [ $(echo "$num < 0 || $num > 1" | bc) -eq 1 ]; then
+  show_error_dialog "Error: Value for SNV filter must be any number between 0 and 1."
+  exit 1
+fi
+
+# Change directory to the script dir
+cd "$SCRIPT_DIR" || exit
+
+# Generate the input file in plink format
+if [[ -z $OUTFOLDER ]]
+  then
+    OUT="$SCRIPT_DIR/results/ADMIXTURE"
+  else
+    OUT="$SCRIPT_DIR/results/$OUTFOLDER/ADMIXTURE"
+fi
+
+##### RUN PLINK #####
+# Create folder to hold the PLINK binaries
+make_dir "$OUT/plink_bin"
+
+# Change to that directory
+cd $SCRIPT_DIR/$FOLDER
+
+# Loop over the files in $1 and extract file name and prepare PLINK binaries
+for file in *."$EXTENSION"; do
+      FNAME=${file%.*}
+      prepare_binaries $SCRIPT_DIR/$FOLDER/$file $OUT $FNAME $SNV_FIL $EXTENSION
+      cd $SCRIPT_DIR/$FOLDER
+done
+
+# # Creates a list of plink binary files to be used for de-duplicating
+cd $OUT/plink_bin
+
+##### MERGE FILES #####
+if [ "$MERGE" = "TRUE" ]; then
+  echo "Merging files..."
+
+  bash $BASHSCRIPTS/create_plink_bin_list.sh "$OUT/plink_bin"
+  FNAME=${FNAME%%[0-9]*}"_merged" # Creates a new file name for the merged files
+
+  # Merges files based on the merge list
+  "$TOOLSDIR/plink/plink" --merge-list merge_list.txt --make-bed --out $FNAME
+
+  # Looks for a file with duplicated sample id's
+  line_file="$OUT/plink_bin/$FNAME-merge.missnp"
+
+  ##### REMOVE DUPLICATES #####
+  # Check if the file with duplicates exists and processe them out, then recreates the PLINK binaries
+  if [ -e "$line_file" ]; then
+
+    bash $BASHSCRIPTS/remove_multialleles.sh "$line_file" "$SCRIPT_DIR/$FOLDER"
+
+    rm -r "$SCRIPT_DIR/results"
+    make_dir "$OUT/plink_bin"
+
+    cd $SCRIPT_DIR/$FOLDER
+
+    # Loop over the files in $1 and extract file name and prepare PLINK binaries
+    for file in *."$EXTENSION"; do
+          FNAME=${file%.*}
+          prepare_binaries $SCRIPT_DIR/$FOLDER/$file $OUT $FNAME $SNV_FIL $EXTENSION
+          cd $SCRIPT_DIR/$FOLDER
+    done
+
+    bash $BASHSCRIPTS/create_plink_bin_list.sh "$OUT/plink_bin"
+    FNAME=${FNAME%%[0-9]*}"_merged"
+
+    "$TOOLSDIR/plink/plink" --merge-list merge_list.txt --make-bed --out $OUT/plink_bin/$FNAME
+
+  else
+    echo "Warning: File line_file does not exist. Skipping merging process..."
+  fi
+
+else
+  echo "Skipping merging..."
+
+fi
+
+mkdir $OUT/cv
+cd $OUT/cv
+
+# Checks the maximum available threads based on users processor and sets the
+# the variable to that integer
+nthrds=$(nproc)
+j="-j$nthrds"
+
+##### RUN ADMIXTURE and evalAdmix #####
+# Caulculates and cross-validates ADMIXTURE proportions for the specific K value
+if [ "$COMPUTE" = "TRUE" ]
+  then
+    echo "Computing admixtures for K=$X..."
+    "$TOOLSDIR/admixture/admixture32" --cv $OUT/plink_bin/$FNAME.bed $X $j | tee log${K}.out
+
+    # Run evalAdmix on the K selected
+    EVADMX_OUT=$OUT/cv/eval_admix_results/"k$X"
+
+    make_dir $EVADMX_OUT
+
+    "$EVADMX_PATH/evalAdmix" -plink $OUT/plink_bin/$FNAME -fname $OUT/cv/$FNAME.$X.P -qname $OUT/cv/$FNAME.$X.Q -P $nthrds -o $EVADMX_OUT/k${X}_output.corres.txt # Runs the evalAdmix script
+
+    echo "Running rscripts..."
+
+    Rscript $RSCRIPTS/visualise.R $OUT/plink_bin/$FNAME.fam $OUT/cv/$FNAME.$X.Q $EVADMX_OUT/k${X}_output.corres.txt $OUT/cv/eval_admix_results/ # Visualise the results
+
+  else
+  # Starts a loop for each 2 to K, so it caulculates and cross-validates ADMIXTURE proportions for all values of K
+    for K in $(seq 2 $X)
+      do
+        "$TOOLSDIR/admixture/admixture32" --cv $OUT/plink_bin/$FNAME.bed $K $j | tee log${K}.out
+
+        # Run evalAdmix on each K selected
+        EVADMX_OUT=$OUT/cv/eval_admix_results/"k$K"
+
+        make_dir $EVADMX_OUT
+
+        "$EVADMX_PATH/evalAdmix" -plink $OUT/plink_bin/$FNAME -fname $OUT/cv/$FNAME.$K.P -qname $OUT/cv/$FNAME.$K.Q -P 4 -o $EVADMX_OUT/k${K}_output.corres.txt # Runs the evalAdmix script
+
+        echo "Running rscripts..."
+
+        Rscript $RSCRIPTS/visualise.R $OUT/plink_bin/$FNAME.fam $OUT/cv/$FNAME.$K.Q $EVADMX_OUT/k${K}_output.corres.txt $OUT/cv/eval_admix_results/ # Visualise the results
+  done
+  grep -h CV $OUT/cv/log*.out > $OUT/cv/final_cv_log.out # Aggregates the results into one file
+
+fi
+
+# Redirects output to out.log and errors to error.log
+# command > out.log 2> error.log
