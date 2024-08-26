@@ -1,6 +1,5 @@
-source("~/bioinf-tools/workshop/evalAdmix/visFuns.R")
 library(here)
-
+source(here('tools', 'evalAdmix', 'visFuns.R'))
 # Retrieve command-line arguments
 args <- commandArgs(trailingOnly = TRUE)
 
