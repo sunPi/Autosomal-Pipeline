@@ -95,22 +95,52 @@ if [[ -z $OUTFOLDER ]]
   then
     OUT="$SCRIPT_DIR/results/ADMIXTURE"
   else
-    OUT="$SCRIPT_DIR/results/$OUTFOLDER/ADMIXTURE"
+    OUT="$SCRIPT_DIR/$OUTFOLDER/ADMIXTURE"
 fi
 
 ##### RUN PLINK #####
-# Create folder to hold the PLINK binaries
-make_dir "$OUT/plink_bin"
+if [ -f "$FOLDER" ]; then
+    echo "$FOLDER is a file."
 
-# Change to that directory
-cd $SCRIPT_DIR/$FOLDER
+    FNAME=$(basename $FOLDER)
+    FNAME=${FNAME%.*}
+    FILE=$FOLDER
+    FPATH=$(realpath $FILE)
+    FOLDER=$(dirname $SCRIPT_DIR/$FOLDER)
 
-# Loop over the files in $1 and extract file name and prepare PLINK binaries
-for file in *."$EXTENSION"; do
-      FNAME=${file%.*}
-      prepare_binaries $SCRIPT_DIR/$FOLDER/$file $OUT $FNAME $SNV_FIL $EXTENSION
-      cd $SCRIPT_DIR/$FOLDER
-done
+
+    echo "This is its FNAME: $FNAME"
+    echo "This is the file path: $FPATH"
+    echo "This is its parent folder: $FOLDER"
+
+    make_dir "$OUT/plink_bin"
+
+    prepare_binaries $FPATH $OUT $FNAME $SNV_FIL $EXTENSION
+
+  elif [ -d "$FOLDER" ]; then
+    echo "$FOLDER is a directory."
+
+    # Create folder to hold the PLINK binaries
+    make_dir "$OUT/plink_bin"
+
+    # Change to that directory
+    cd $SCRIPT_DIR/$FOLDER
+
+    # Loop over the files in $1 and extract file name and prepare PLINK binaries
+    for file in *."$EXTENSION"; do
+          echo "This is the file $file"
+          FNAME=${file%.*}
+          echo "This is its FNAME: $FNAME"
+
+          # prepare_binaries $SCRIPT_DIR/$FOLDER/$file $OUT $FNAME $SNV_FIL $EXTENSION
+          # cd $SCRIPT_DIR/$FOLDER
+    done
+
+  else
+    echo "$FOLDER does not exist or is not a regular file/directory."
+fi
+
+
 
 # # Creates a list of plink binary files to be used for de-duplicating
 cd $OUT/plink_bin
@@ -157,8 +187,9 @@ if [ "$MERGE" = "TRUE" ]; then
 
 else
   echo "Skipping merging..."
-
 fi
+
+
 
 mkdir $OUT/cv
 cd $OUT/cv
@@ -175,16 +206,16 @@ if [ "$COMPUTE" = "TRUE" ]
     echo "Computing admixtures for K=$X..."
     "$TOOLSDIR/admixture/admixture32" --cv $OUT/plink_bin/$FNAME.bed $X $j | tee log${K}.out
 
-    # Run evalAdmix on the K selected
-    EVADMX_OUT=$OUT/cv/eval_admix_results/"k$X"
-
-    make_dir $EVADMX_OUT
-
-    "$EVADMX_PATH/evalAdmix" -plink $OUT/plink_bin/$FNAME -fname $OUT/cv/$FNAME.$X.P -qname $OUT/cv/$FNAME.$X.Q -P $nthrds -o $EVADMX_OUT/k${X}_output.corres.txt # Runs the evalAdmix script
-
-    echo "Running rscripts..."
-
-    Rscript $RSCRIPTS/visualise.R $OUT/plink_bin/$FNAME.fam $OUT/cv/$FNAME.$X.Q $EVADMX_OUT/k${X}_output.corres.txt $OUT/cv/eval_admix_results/ # Visualise the results
+    # # Run evalAdmix on the K selected
+    # EVADMX_OUT=$OUT/cv/eval_admix_results/"k$X"
+    #
+    # make_dir $EVADMX_OUT
+    #
+    # "$EVADMX_PATH/evalAdmix" -plink $OUT/plink_bin/$FNAME -fname $OUT/cv/$FNAME.$X.P -qname $OUT/cv/$FNAME.$X.Q -P $nthrds -o $EVADMX_OUT/k${X}_output.corres.txt # Runs the evalAdmix script
+    #
+    # echo "Running rscripts..."
+    #
+    # Rscript $RSCRIPTS/visualise.R $OUT/plink_bin/$FNAME.fam $OUT/cv/$FNAME.$X.Q $EVADMX_OUT/k${X}_output.corres.txt $OUT/cv/eval_admix_results/ # Visualise the results
 
   else
   # Starts a loop for each 2 to K, so it caulculates and cross-validates ADMIXTURE proportions for all values of K
@@ -206,6 +237,13 @@ if [ "$COMPUTE" = "TRUE" ]
   grep -h CV $OUT/cv/log*.out > $OUT/cv/final_cv_log.out # Aggregates the results into one file
 
 fi
+
+GFOLDER=$SCRIPT_DIR/results/K$X/geomap/qfiles
+
+mkdir -p $GFOLDER
+cp $OUT/cv/$FNAME.$X.Q $GFOLDER
+
+
 
 # Redirects output to out.log and errors to error.log
 # command > out.log 2> error.log
